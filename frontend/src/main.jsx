@@ -155,10 +155,18 @@ function App() {
           distance-weighted risk → shortest time. No Travel routes are excluded.
         </p>
         <p className="dialog-note">
-          Routing: OSRM · Forecasts & city search: Open-Meteo · Map:
-          OpenStreetMap. Routes use a passenger-car profile and do not validate
-          truck restrictions. Forecast colors are interpolated estimates, not
-          radar.
+          Routing: OSRM · Weather:{" "}
+          <a
+            href="https://www.weatherapi.com/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            WeatherAPI.com
+          </a>{" "}
+          / Open-Meteo · Map: OpenStreetMap. Routes use a passenger-car profile
+          and do not validate truck restrictions. Forecast colors are
+          interpolated estimates, not radar. WeatherAPI total precipitation is
+          compared conservatively to rain thresholds.
         </p>
       </dialog>
       <main>
@@ -332,7 +340,9 @@ function App() {
               </h2>
             </div>
             <span className="livebadge">
-              {data ? "Live forecast loaded" : "Ready to plan"}
+              {data
+                ? `${data.weather_provider || "Live"} forecast loaded`
+                : "Ready to plan"}
             </span>
           </div>
           <div className="map">
@@ -378,7 +388,10 @@ function App() {
                       <br />
                       Wind: {p.wind} mph
                       <br />
-                      Rain: {p.rain} in/hr · Snow: {p.snow} in/hr
+                      {data.weather_provider === "WeatherAPI.com"
+                        ? "Precip"
+                        : "Rain"}
+                      : {p.rain} in/hr · Snow: {p.snow} in/hr
                     </Popup>
                   </CircleMarker>
                 </React.Fragment>
@@ -464,7 +477,11 @@ function App() {
                       <th>Checkpoint</th>
                       <th>Arrival · local</th>
                       <th>Wind</th>
-                      <th>Rain / snow</th>
+                      <th>
+                        {data.weather_provider === "WeatherAPI.com"
+                          ? "Precip / snow"
+                          : "Rain / snow"}
+                      </th>
                       <th>Risk</th>
                     </tr>
                   </thead>

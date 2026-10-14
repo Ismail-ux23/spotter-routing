@@ -9,8 +9,13 @@ from django.core.cache import cache
 from .risk import classify, summarize, recommend
 from .alternatives import find_routes
 from .corridor import corridor_grid
+from . import weatherapi
 
 MILE = 1609.344
+
+
+class ProviderError(requests.RequestException):
+    pass
 
 
 class ProviderRateLimit(requests.RequestException):
@@ -53,6 +58,9 @@ def fetch(url, params):
     host = urlparse(url).hostname
     provider = "Open-Meteo weather" if host == "api.open-meteo.com" else host
     cooldown_key = "provider-cooldown:" + host
+    if host == "api.weatherapi.com":
+        provider = "WeatherAPI"
+        cooldown_key += hashlib.sha256(str(params.get("key", "")).encode()).hexdigest()
     until = cache.get(cooldown_key, 0)
     if until > time.time():
         raise ProviderRateLimit(provider, math.ceil(until - time.time()))
@@ -61,6 +69,23 @@ def fetch(url, params):
         delay = retry_delay(response)
         cache.set(cooldown_key, time.time() + delay, delay)
         raise ProviderRateLimit(provider, delay)
+    if host == "api.weatherapi.com" and response.status_code >= 400:
+        try:
+            code = response.json().get("error", {}).get("code")
+        except (ValueError, AttributeError):
+            code = None
+        messages = {
+            2006: "WeatherAPI key is invalid. Check the server configuration.",
+            2007: "WeatherAPI monthly quota is exhausted. Check your account usage.",
+            2008: "WeatherAPI key is disabled. Check your account.",
+            2009: "WeatherAPI plan does not allow this request.",
+            1002: "WeatherAPI key is missing from the server configuration.",
+        }
+        if code == 1006:
+            raise ValueError("WeatherAPI could not find this location.")
+        raise ProviderError(
+            messages.get(code, "WeatherAPI is unavailable. Please retry later.")
+        )
     response.raise_for_status()
     data = response.json()
     cache.set(key, data, 600)
@@ -68,6 +93,8 @@ def fetch(url, params):
 
 
 def geocode(name):
+    if weatherapi.api_key():
+        return weatherapi.geocode(name, fetch)
     data = fetch(
         "https://geocoding-api.open-meteo.com/v1/search",
         {"name": name, "count": 1, "language": "en"},
@@ -143,6 +170,8 @@ def checkpoints(route, interval, departure):
 
 
 def weather(points):
+    if weatherapi.api_key():
+        return weatherapi.weather(points, fetch)
     # Cache forecasts by exact requested coordinate, independent of route/load.
     # A shared checkpoint is fetched once; valid data survives web-worker reloads.
     coordinates = [(round(p["lat"], 4), round(p["lon"], 4)) for p in points]
@@ -186,10 +215,16 @@ def sample(hourly, when, load):
     target = when.astimezone(timezone.utc).replace(tzinfo=None)
     times = [datetime.fromisoformat(t) for t in hourly["time"]]
     # Precipitation is the preceding hour's accumulation; use the enclosing hour.
-    idx = next((i for i, t in enumerate(times) if t >= target), None)
+    if hourly.get("interval_start"):
+        idx = next(
+            (i for i, t in enumerate(times) if t <= target < t + timedelta(hours=1)),
+            None,
+        )
+    else:
+        idx = next((i for i, t in enumerate(times) if t >= target), None)
     if idx is None or target < times[0]:
         raise ValueError(
-            "Trip extends outside available forecast. Choose an earlier departure."
+            "Trip or 48-hour overlay extends outside the available forecast. Choose a departure closer to now or a shorter trip."
         )
     values = [hourly[k][idx] for k in ("wind_speed_10m", "rain", "showers", "snowfall")]
     if any(
@@ -233,6 +268,10 @@ def plan(payload):
     now = datetime.now(timezone.utc)
     if departure < now - timedelta(minutes=5) or departure > now + timedelta(days=4):
         raise ValueError("Departure must be within the next four days.")
+    if weatherapi.api_key() and departure > now + timedelta(hours=24):
+        raise ValueError(
+            "With the three-day weather plan, choose departure within the next 24 hours. The full 48-hour overlay must fit the available forecast."
+        )
     a, b = geocode(origin), geocode(destination)
     raw_routes = find_routes(a, b, fetch)
     routes = []
@@ -279,4 +318,5 @@ def plan(payload):
         )
         + "Passenger-car routing profile; truck restrictions are not checked.",
         "departure": departure.isoformat(),
+        "weather_provider": "WeatherAPI.com" if weatherapi.api_key() else "Open-Meteo",
     }
