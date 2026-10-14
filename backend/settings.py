@@ -30,7 +30,8 @@ CACHES = {
 }
 DATA_UPLOAD_MAX_MEMORY_SIZE = 8192
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_REFERRER_POLICY = "same-origin"
+# Send the site origin to cross-origin map tiles, as required by OSM policy.
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 # Enable only behind a trusted TLS-terminating proxy (Render's edge).
 if os.environ.get("TRUST_PROXY") == "1":
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
