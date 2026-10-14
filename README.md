@@ -2,6 +2,12 @@
 
 React + Django assessment implementation. Live city geocoding, road alternatives, distance-based checkpoints, ETA-specific forecasts, load-sensitive risk classification and a spatial corridor heatmap with a 0–48 hour slider and playback.
 
+## App preview
+
+Live Chicago–Detroit route comparison with ETA checkpoints and the corridor weather heatmap.
+
+<img src="docs/screenshots/route-planner.jpg" alt="Spotter route planner showing three alternatives, checkpoint forecasts and weather heatmap" width="600" />
+
 ## Run locally
 
 Backend:
