@@ -24,7 +24,10 @@ WHITENOISE_INDEX_FILE = True
 WHITENOISE_MAX_AGE = 3600
 CACHES = {
     "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": os.environ.get(
+            "SPOTTER_CACHE_DIR", str(Path.home() / ".cache" / "spotter-routing")
+        ),
         "OPTIONS": {"MAX_ENTRIES": 1500},
     }
 }

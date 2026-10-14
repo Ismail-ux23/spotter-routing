@@ -1,5 +1,8 @@
 import math
 import hashlib
+import time
+from email.utils import parsedate_to_datetime
+from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 import requests
 from django.core.cache import cache
@@ -10,12 +13,54 @@ from .corridor import corridor_grid
 MILE = 1609.344
 
 
+class ProviderRateLimit(requests.RequestException):
+    def __init__(self, provider, retry_after):
+        self.retry_after = max(1, int(retry_after))
+        minutes = math.ceil(self.retry_after / 60)
+        super().__init__(
+            f"{provider} has reached its request limit. Try again in about {minutes} minute(s). "
+            "No new provider requests will be sent during this cooldown."
+        )
+
+
+def retry_delay(response):
+    value = response.headers.get("Retry-After", "")
+    try:
+        return max(1, math.ceil(float(value)))
+    except (ValueError, OverflowError):
+        try:
+            return max(
+                1, math.ceil(parsedate_to_datetime(value).timestamp() - time.time())
+            )
+        except (ValueError, TypeError, OverflowError):
+            pass
+    try:
+        reason = str(response.json().get("reason", "")).lower()
+    except (ValueError, AttributeError):
+        reason = ""
+    if "day" in reason or "daily" in reason:
+        return 86400
+    if "hour" in reason:
+        return 3600
+    return 60
+
+
 def fetch(url, params):
     key = hashlib.sha256((url + str(sorted(params.items()))).encode()).hexdigest()
     cached = cache.get(key)
     if cached is not None:
         return cached
+    host = urlparse(url).hostname
+    provider = "Open-Meteo weather" if host == "api.open-meteo.com" else host
+    cooldown_key = "provider-cooldown:" + host
+    until = cache.get(cooldown_key, 0)
+    if until > time.time():
+        raise ProviderRateLimit(provider, math.ceil(until - time.time()))
     response = requests.get(url, params=params, timeout=35)
+    if response.status_code == 429:
+        delay = retry_delay(response)
+        cache.set(cooldown_key, time.time() + delay, delay)
+        raise ProviderRateLimit(provider, delay)
     response.raise_for_status()
     data = response.json()
     cache.set(key, data, 600)
@@ -98,14 +143,27 @@ def checkpoints(route, interval, departure):
 
 
 def weather(points):
-    results = []
-    for start in range(0, len(points), 40):
-        batch = points[start : start + 40]
+    # Cache forecasts by exact requested coordinate, independent of route/load.
+    # A shared checkpoint is fetched once; valid data survives web-worker reloads.
+    coordinates = [(round(p["lat"], 4), round(p["lon"], 4)) for p in points]
+    day = datetime.now(timezone.utc).date().isoformat()
+
+    def key(coord):
+        return f"weather-v1:{day}:{coord[0]}:{coord[1]}"
+
+    found = {}
+    for coord in dict.fromkeys(coordinates):
+        item = cache.get(key(coord))
+        if item is not None:
+            found[coord] = item
+    missing = [coord for coord in dict.fromkeys(coordinates) if coord not in found]
+    for start in range(0, len(missing), 40):
+        batch = missing[start : start + 40]
         data = fetch(
             "https://api.open-meteo.com/v1/forecast",
             {
-                "latitude": ",".join(str(round(p["lat"], 4)) for p in batch),
-                "longitude": ",".join(str(round(p["lon"], 4)) for p in batch),
+                "latitude": ",".join(str(lat) for lat, lon in batch),
+                "longitude": ",".join(str(lon) for lat, lon in batch),
                 "hourly": "wind_speed_10m,rain,showers,snowfall",
                 "wind_speed_unit": "mph",
                 "precipitation_unit": "mm",
@@ -116,8 +174,12 @@ def weather(points):
         items = data if isinstance(data, list) else [data]
         if len(items) != len(batch):
             raise ValueError("Weather provider returned an incomplete forecast batch.")
-        results.extend(items)
-    return results
+        for coord, item in zip(batch, items):
+            if not isinstance(item, dict) or not item.get("hourly"):
+                raise ValueError("Weather provider returned missing forecast data.")
+            found[coord] = item
+            cache.set(key(coord), item, 3600)
+    return [found[coord] for coord in coordinates]
 
 
 def sample(hourly, when, load):

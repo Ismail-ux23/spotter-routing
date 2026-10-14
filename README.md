@@ -51,7 +51,7 @@ npm run build
 - OSRM's public driving profile is passenger-car based, not truck-restriction aware. Breaks and traffic aren't modeled.
 - Full corridor heatmap samples a geographic grid within 35 km of all routes. Starts at 25 km spacing and adapts to at most 180 nodes. All 49 hourly risk values are prefetched. Canvas inverse-distance interpolation is clipped to buffered route geometry and redraws on pan/zoom/resize. It is an interpolated forecast risk field, not radar or an exact storm boundary.
 - City search currently chooses the top match. Disambiguated geocoding selection remains to implement.
-- Public API availability and rate limits apply. Weather requests are batched and cached for ten minutes. Production needs shared cache, request throttling, authentication as appropriate, and a job queue for long trips.
+- Public API availability and rate limits apply. Weather requests are batched, with duplicate coordinates reused and forecasts cached for one hour on disk. Other provider responses are cached for ten minutes. Provider HTTP 429 responses trigger a cooldown using Retry-After when supplied; otherwise a conservative delay is used. Caching reduces repeat requests but cannot remove an exhausted provider quota. Multi-instance production needs a shared cache, request throttling, authentication as appropriate, and a job queue for long trips.
 
 ## Deployment
 

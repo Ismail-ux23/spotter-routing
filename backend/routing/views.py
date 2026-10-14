@@ -4,7 +4,7 @@ import requests
 from django.core.exceptions import RequestDataTooBig
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .service import plan
+from .service import plan, ProviderRateLimit
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,12 @@ def routes(request):
         return JsonResponse({"error": "Request is too large."}, status=413)
     except (ValueError, KeyError, TypeError, OverflowError) as error:
         return JsonResponse({"error": str(error)}, status=400)
+    except ProviderRateLimit as error:
+        response = JsonResponse(
+            {"error": str(error), "retry_after": error.retry_after}, status=429
+        )
+        response["Retry-After"] = str(error.retry_after)
+        return response
     except requests.RequestException:
         return JsonResponse(
             {
