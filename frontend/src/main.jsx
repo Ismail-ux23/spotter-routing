@@ -14,7 +14,7 @@ import WeatherHeatmap from "./WeatherHeatmap";
 const colors = ["#28a67a", "#e6b348", "#ed873b", "#da5265", "#792d56"];
 const labels = ["Low", "Moderate", "High", "Severe", "No Travel"];
 const localDate = () => {
-  const d = new Date(Date.now() + 3600000);
+  const d = new Date();
   return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 };
 function Fit({ data }) {
