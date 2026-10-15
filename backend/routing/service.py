@@ -92,6 +92,62 @@ def fetch(url, params):
     return data
 
 
+def search_cities(query):
+    if weatherapi.api_key():
+        rows = fetch(
+            weatherapi.BASE_URL + "search.json",
+            {"key": weatherapi.api_key(), "q": query},
+        )
+        return [
+            {
+                "name": ", ".join(
+                    dict.fromkeys(
+                        str(v)
+                        for v in (p.get("name"), p.get("region"), p.get("country"))
+                        if v
+                    )
+                ),
+                "lat": p["lat"],
+                "lon": p["lon"],
+            }
+            for p in rows[:6]
+        ]
+    data = fetch(
+        "https://geocoding-api.open-meteo.com/v1/search",
+        {"name": query, "count": 6, "language": "en"},
+    )
+    return [
+        {
+            "name": ", ".join(
+                dict.fromkeys(
+                    str(v)
+                    for v in (p.get("name"), p.get("admin1"), p.get("country"))
+                    if v
+                )
+            ),
+            "lat": p["latitude"],
+            "lon": p["longitude"],
+        }
+        for p in data.get("results", [])
+    ]
+
+
+def resolve_city(name, selected):
+    if selected is None:
+        return geocode(name)
+    if not isinstance(selected, dict) or selected.get("name") != name:
+        raise ValueError("Select the city again or clear the selection.")
+    lat, lon = float(selected["lat"]), float(selected["lon"])
+    if (
+        not math.isfinite(lat)
+        or not math.isfinite(lon)
+        or not -90 <= lat <= 90
+        or not -180 <= lon <= 180
+    ):
+        raise ValueError("Selected city has invalid coordinates.")
+    return {"name": name, "lat": lat, "lon": lon}
+
+
 def geocode(name):
     if weatherapi.api_key():
         return weatherapi.geocode(name, fetch)
@@ -272,7 +328,8 @@ def plan(payload):
         raise ValueError(
             "With the three-day weather plan, choose departure within the next 24 hours. The full 48-hour overlay must fit the available forecast."
         )
-    a, b = geocode(origin), geocode(destination)
+    a = resolve_city(origin, payload.get("origin_location"))
+    b = resolve_city(destination, payload.get("destination_location"))
     raw_routes = find_routes(a, b, fetch)
     routes = []
     for raw in raw_routes:

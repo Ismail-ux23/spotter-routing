@@ -4,7 +4,7 @@ import requests
 from django.core.exceptions import RequestDataTooBig
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .service import plan, ProviderRateLimit, ProviderError
+from .service import plan, ProviderRateLimit, ProviderError, search_cities
 
 logger = logging.getLogger(__name__)
 
@@ -53,4 +53,27 @@ def routes(request):
                 "error": "Unable to complete this trip. Please retry or choose another destination."
             },
             status=500,
+        )
+
+
+def cities(request):
+    if request.method != "GET":
+        response = JsonResponse({"error": "GET required"}, status=405)
+        response["Allow"] = "GET"
+        return response
+    query = request.GET.get("q", "").strip()
+    if len(query) < 2:
+        return JsonResponse({"cities": []})
+    if len(query) > 150:
+        return JsonResponse({"error": "City name is too long."}, status=400)
+    try:
+        return JsonResponse({"cities": search_cities(query)})
+    except ProviderRateLimit as error:
+        response = JsonResponse({"error": str(error)}, status=429)
+        response["Retry-After"] = str(error.retry_after)
+        return response
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        return JsonResponse(
+            {"error": "City search is unavailable. You can still type a city name."},
+            status=502,
         )

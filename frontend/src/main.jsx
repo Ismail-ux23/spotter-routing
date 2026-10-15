@@ -11,6 +11,7 @@ import {
 import "leaflet/dist/leaflet.css";
 import "./style.css";
 import WeatherHeatmap from "./WeatherHeatmap";
+import CityInput from "./CityInput";
 const colors = ["#28a67a", "#e6b348", "#ed873b", "#da5265", "#792d56"];
 const labels = ["Low", "Moderate", "High", "Severe", "No Travel"];
 const localDate = () => {
@@ -183,26 +184,31 @@ function App() {
           </p>
           <form onSubmit={submit}>
             <div className="locations">
-              <label>
-                Origin city
-                <input
-                  name="origin"
-                  value={form.origin}
-                  onChange={update}
-                  required
-                  placeholder="City or town"
-                />
-              </label>
+              <CityInput
+                label="Origin city"
+                name="origin"
+                value={form.origin}
+                onChange={(value, location) =>
+                  setForm((f) => ({
+                    ...f,
+                    origin: value,
+                    origin_location: location,
+                  }))
+                }
+              />
               <span className="connector">↕</span>
-              <label>
-                Destination city
-                <input
-                  name="destination"
-                  value={form.destination}
-                  onChange={update}
-                  required
-                />
-              </label>
+              <CityInput
+                label="Destination city"
+                name="destination"
+                value={form.destination}
+                onChange={(value, location) =>
+                  setForm((f) => ({
+                    ...f,
+                    destination: value,
+                    destination_location: location,
+                  }))
+                }
+              />
             </div>
             <label>
               Departure · your local time
